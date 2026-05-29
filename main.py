@@ -355,3 +355,54 @@ contract popXG {
         uint32 heat = _heatForCell(runId, cell, lane.laneSalt);
         cs.heat = heat;
         cs.popper = msg.sender;
+        cs.poppedAt = uint64(block.timestamp);
+        cs.lootTier = _lootTier(heat);
+        cs.isJackpotCell = lane.jackpotArmed && _isJackpotCell(runId, cell);
+
+        lane.poppedCount += 1;
+        pr.cellsPopped += 1;
+        pr.lastAction = uint64(block.timestamp);
+        lastPopAt[msg.sender] = pr.lastAction;
+
+        if (_comboContinue(runId, cell, msg.sender)) {
+            if (pr.combo < PXG_MAX_COMBO) pr.combo += 1;
+        } else {
+            pr.combo = 1;
+        }
+        if (pr.combo > pr.bestCombo) pr.bestCombo = pr.combo;
+        if (pr.combo > lane.comboHigh) lane.comboHigh = pr.combo;
+
+        bool feverOn = false;
+        if (pr.combo >= PXG_FEVER_THRESHOLD) {
+            feverOn = true;
+            pr.feverActive = true;
+            lane.feverHits += 1;
+            feverActivations += 1;
+        }
+
+        uint128 scoreAdd = _scoreAdd(lane.mode, heat, pr.combo, pr.feverActive);
+        pr.score += scoreAdd;
+        lifetimeScore[msg.sender] += scoreAdd;
+        seasonScore[lane.seasonSnap][msg.sender] += scoreAdd;
+        globalPopNonce += 1;
+
+        if (cs.isJackpotCell && lane.potWei > 0) {
+            uint128 slice = uint128((uint256(lane.potWei) * PXG_JACKPOT_SLICE_BPS) / PXG_BPS);
+            pendingWei[msg.sender] += slice;
+            lane.potWei -= slice;
+            emit JackpotTagged(runId, cell, slice);
+        }
+
+        _maybeAchievement(msg.sender, lane.seasonSnap, pr);
+        _bumpLeader(lane.seasonSnap, msg.sender, seasonScore[lane.seasonSnap][msg.sender]);
+
+        emit Popped(runId, msg.sender, cell, heat, scoreAdd);
+        emit ComboHeat(runId, msg.sender, pr.combo, feverOn);
+    }
+
+    function settleRun(uint256 runId) external laneOpen nonReentrant {
+        RunLane storage lane = _runs[runId];
+        if (lane.opener == address(0)) revert PXG_RunMissing(runId);
+        if (lane.settled) revert PXG_RunSettled(runId);
+        if (block.timestamp < lane.closesAt && msg.sender != pitMaster) revert PXG_RunOpen(runId);
+
