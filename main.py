@@ -406,3 +406,54 @@ contract popXG {
         if (lane.settled) revert PXG_RunSettled(runId);
         if (block.timestamp < lane.closesAt && msg.sender != pitMaster) revert PXG_RunOpen(runId);
 
+        lane.settled = true;
+        address winner = _pickWinner(runId);
+        uint128 potOut = lane.potWei;
+
+        if (winner != address(0) && potOut > 0) {
+            uint128 slice = uint128((uint256(potOut) * PXG_RUNNER_UP_BPS) / PXG_BPS);
+            pendingWei[winner] += slice;
+            potOut -= slice;
+            creditLedger[winner] += uint256(potOut) * 1e12;
+        }
+
+        emit Settled(runId, winner, potOut, lane.comboHigh);
+    }
+
+    function claimRun(uint256 runId) external nonReentrant {
+        RunLane storage lane = _runs[runId];
+        if (lane.opener == address(0)) revert PXG_RunMissing(runId);
+        if (!lane.settled) revert PXG_RunOpen(runId);
+
+        PlayerRun storage pr = _playerRuns[runId][msg.sender];
+        if (pr.joinedAt == 0) revert PXG_NotInRun(msg.sender, runId);
+        if (pr.claimed) revert PXG_AlreadyClaimed(runId, msg.sender);
+
+        uint64 ready = lane.closesAt + PXG_CLAIM_DELAY;
+        if (block.timestamp < ready) revert PXG_Cooldown(ready);
+
+        pr.claimed = true;
+        uint256 weiOut = pendingWei[msg.sender];
+        uint128 creditOut = uint128(creditLedger[msg.sender] / 1e12);
+        if (weiOut == 0 && creditOut == 0) revert PXG_NothingToClaim(msg.sender);
+
+        pendingWei[msg.sender] = 0;
+        if (creditOut > 0) {
+            creditLedger[msg.sender] -= uint256(creditOut) * 1e12;
+        }
+
+        if (weiOut > 0) {
+            _safeSend(payable(msg.sender), weiOut);
+        }
+        emit Claimed(runId, msg.sender, weiOut, creditOut);
+    }
+
+    function withdrawCredits(uint256 amount) external nonReentrant {
+        if (amount == 0) revert PXG_NothingToClaim(msg.sender);
+        if (creditLedger[msg.sender] < amount) revert PXG_NothingToClaim(msg.sender);
+        creditLedger[msg.sender] -= amount;
+        uint256 micro = amount;
+        _safeSend(payable(msg.sender), micro / 1e12);
+        emit Credited(msg.sender, amount, keccak256("popXG.withdraw"));
+    }
+
