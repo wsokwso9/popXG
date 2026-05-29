@@ -151,3 +151,54 @@ contract popXG {
         uint32 scoreMultiplier;
         uint64 durationBias;
         bool enabled;
+    }
+
+    error PXG_NotPitMaster(address who);
+    error PXG_ZeroAddr();
+    error PXG_Frozen();
+    error PXG_Reentry();
+    error PXG_BadFee(uint16 got, uint16 cap);
+    error PXG_BadEntry(uint256 got);
+    error PXG_RunMissing(uint256 runId);
+    error PXG_RunClosed(uint256 runId);
+    error PXG_RunSettled(uint256 runId);
+    error PXG_RunOpen(uint256 runId);
+    error PXG_NotInRun(address who, uint256 runId);
+    error PXG_CellBounds(uint16 cell);
+    error PXG_CellPopped(uint16 cell);
+    error PXG_Cooldown(uint64 ready);
+    error PXG_NothingToClaim(address who);
+    error PXG_AlreadyClaimed(uint256 runId, address who);
+    error PXG_ModeOff(uint32 mode);
+    error PXG_SaltUsed(bytes32 salt);
+    error PXG_PotDry();
+    error PXG_TransferFail();
+    error PXG_EthUnexpected();
+    error PXG_FallbackBlocked();
+
+    event Tipped(address indexed from, uint256 amount, bytes32 memo);
+    event PitMoved(address indexed prev, address indexed next);
+    event OracleRelaySet(address indexed prev, address indexed next);
+    event GridFreeze(bool indexed on, address indexed by);
+    event FeeTuned(uint16 laneFeeBps, uint16 heatDecayBps, address indexed by);
+    event SeasonRolled(uint64 indexed seasonId, uint64 openedAt, uint128 carriedPot);
+    event ModePinned(uint32 indexed mode, bytes32 label, bool enabled);
+    event Opened(uint256 indexed runId, address indexed opener, uint32 mode, uint128 entryWei, uint64 closesAt);
+    event Joined(uint256 indexed runId, address indexed player, uint128 paid);
+    event Popped(uint256 indexed runId, address indexed player, uint16 cell, uint32 heat, uint128 scoreAdd);
+    event ComboHeat(uint256 indexed runId, address indexed player, uint16 combo, bool feverOn);
+    event JackpotTagged(uint256 indexed runId, uint16 cell, uint128 potSlice);
+    event Settled(uint256 indexed runId, address indexed winner, uint128 potOut, uint16 peakCombo);
+    event Claimed(uint256 indexed runId, address indexed player, uint256 weiOut, uint128 creditOut);
+    event Credited(address indexed player, uint256 delta, bytes32 reason);
+    event Swept(address indexed to, uint256 amount, bytes32 tag);
+    event Achievement(address indexed player, uint64 seasonId, uint8 slot, uint256 bitmap);
+
+    modifier onlyPitMaster() {
+        if (msg.sender != pitMaster) revert PXG_NotPitMaster(msg.sender);
+        _;
+    }
+
+    modifier laneOpen() {
+        if (gridFrozen) revert PXG_Frozen();
+        _;
