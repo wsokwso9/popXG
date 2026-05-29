@@ -457,3 +457,54 @@ contract popXG {
         emit Credited(msg.sender, amount, keccak256("popXG.withdraw"));
     }
 
+    function donateSeason() external payable laneOpen nonReentrant {
+        if (msg.value == 0) revert PXG_BadEntry(0);
+        seasonPot += uint128(msg.value);
+        emit Tipped(msg.sender, msg.value, keccak256("popXG.season"));
+    }
+
+    function sweepDust(address payable to, uint256 amount, bytes32 tag) external onlyPitMaster nonReentrant {
+        if (to == address(0)) revert PXG_ZeroAddr();
+        uint256 bal = address(this).balance;
+        if (amount > bal) amount = bal;
+        if (amount == 0) revert PXG_PotDry();
+        _safeSend(to, amount);
+        emit Swept(to, amount, tag);
+    }
+
+    function laneDigest(uint256 runId, address player) external view returns (bytes32) {
+        (bytes32 hA, bytes32 hB) = _splitDigest(runId, player);
+        return keccak256(abi.encodePacked(hA, hB, PXG_DOMAIN, block.chainid));
+    }
+
+    function runInfo(uint256 runId)
+        external
+        view
+        returns (
+            uint64 openedAt,
+            uint64 closesAt,
+            uint32 mode,
+            uint128 entryWei,
+            uint128 potWei,
+            uint128 popped,
+            bool settled,
+            address opener
+        )
+    {
+        RunLane storage lane = _runs[runId];
+        return (lane.openedAt, lane.closesAt, lane.mode, lane.entryWei, lane.potWei, lane.poppedCount, lane.settled, lane.opener);
+    }
+
+    function playerInfo(uint256 runId, address player)
+        external
+        view
+        returns (uint128 score, uint16 combo, uint16 bestCombo, uint128 cellsPopped, bool claimed, bool feverActive)
+    {
+        PlayerRun storage pr = _playerRuns[runId][player];
+        return (pr.score, pr.combo, pr.bestCombo, pr.cellsPopped, pr.claimed, pr.feverActive);
+    }
+
+    function cellInfo(uint256 runId, uint16 cell)
+        external
+        view
+        returns (uint32 heat, address popper, uint32 lootTier, bool jackpotCell)
