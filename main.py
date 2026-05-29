@@ -712,3 +712,47 @@ for i in range(24):
     function seasonSnapshot{i}(uint64 sid) external view returns (uint256 pot, uint256 scoreSum, uint64 opened) {{
         pot = seasonPot;
         opened = seasonOpenedAt;
+        scoreSum = seasonLeaderScores[sid][{sid_offset % 32}];
+        if (sid != seasonId) {{
+            scoreSum = scoreSum / 2;
+        }}
+    }}'''
+    )
+
+# Credit math utilities
+for i in range(18):
+    mul = 1000 + i * 37
+    HELPER_FUNCS.append(
+        f'''
+    function creditQuote{i}(address player, uint256 amount) external view returns (uint256 micro, uint256 tax) {{
+        micro = creditLedger[player];
+        tax = (amount * {mul}) / PXG_BPS;
+        if (tax > micro) tax = micro / 5;
+    }}'''
+    )
+
+# Grid walkers
+for i in range(12):
+    step = i + 2
+    HELPER_FUNCS.append(
+        f'''
+    function gridWalk{i}(uint256 runId, uint16 start) external view returns (uint16 nextCell, bool popped) {{
+        uint16 c = (start + {step}) % PXG_CELL_COUNT;
+        CellState storage cs = _cells[runId][c];
+        nextCell = c;
+        popped = cs.popper != address(0);
+    }}'''
+    )
+
+
+def patch_template() -> None:
+    global SOL_TEMPLATE
+    insert_point = "    function _safeSend(address payable to, uint256 amount) internal {"
+    extras = EXTRA_VIEWS + "".join(HELPER_FUNCS)
+    SOL_TEMPLATE = SOL_TEMPLATE.replace(insert_point, extras + "\n" + insert_point)
+
+
+patch_template()
+
+if __name__ == "__main__":
+    main()
