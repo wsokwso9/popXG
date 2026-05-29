@@ -559,3 +559,54 @@ contract popXG {
             enabled: true
         });
         modeCatalog[uint8(PXG_MODE_FEVER)] = ModeRecipe({
+            label: keccak256("popXG.fever"),
+            cellTarget: PXG_CELL_COUNT,
+            feeBiasBps: 61,
+            scoreMultiplier: 3_333,
+            durationBias: 28 minutes,
+            enabled: true
+        });
+    }
+
+    function _runDuration(uint32 mode) internal view returns (uint64) {
+        ModeRecipe memory r = modeCatalog[uint8(mode)];
+        return r.durationBias + 14 minutes;
+    }
+
+    function _heatForCell(uint256 runId, uint16 cell, bytes32 salt) internal view returns (uint32) {
+        bytes32 mix = keccak256(abi.encodePacked(runId, cell, salt, block.prevrandao, globalPopNonce));
+        return uint32(uint256(mix) % 9_001) + 100;
+    }
+
+    function _lootTier(uint32 heat) internal pure returns (uint32) {
+        if (heat > 7_500) return 4;
+        if (heat > 5_000) return 3;
+        if (heat > 2_500) return 2;
+        return 1;
+    }
+
+    function _comboContinue(uint256 runId, uint16 cell, address player) internal view returns (bool) {
+        uint16 prev = cell == 0 ? PXG_CELL_COUNT - 1 : cell - 1;
+        CellState storage left = _cells[runId][prev];
+        return left.popper == player && left.poppedAt + PXG_POP_COOLDOWN * 2 >= block.timestamp;
+    }
+
+    function _scoreAdd(uint32 mode, uint32 heat, uint16 combo, bool fever) internal view returns (uint128) {
+        ModeRecipe memory r = modeCatalog[uint8(mode)];
+        uint256 base = uint256(heat) * r.scoreMultiplier / 1_000;
+        base += uint256(combo) * 17;
+        if (fever) base = base * 13 / 10;
+        return uint128(base);
+    }
+
+    function _jackpotRoll(bytes32 salt, uint256 runId) internal view returns (bool) {
+        return uint256(keccak256(abi.encodePacked(salt, runId, ADDRESS_A))) % 17 == 3;
+    }
+
+    function _isJackpotCell(uint256 runId, uint16 cell) internal view returns (bool) {
+        return uint256(keccak256(abi.encodePacked(runId, cell, ADDRESS_B))) % 29 == 11;
+    }
+
+    function _pickWinner(uint256 runId) internal view returns (address) {
+        RunLane storage lane = _runs[runId];
+        bytes32 mix = keccak256(abi.encodePacked(runId, lane.laneSalt, lane.poppedCount, block.prevrandao));
