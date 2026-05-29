@@ -508,3 +508,54 @@ contract popXG {
         external
         view
         returns (uint32 heat, address popper, uint32 lootTier, bool jackpotCell)
+    {
+        CellState storage cs = _cells[runId][cell];
+        return (cs.heat, cs.popper, cs.lootTier, cs.isJackpotCell);
+    }
+
+    function seasonBoard(uint64 sid) external view returns (address[32] memory leaders, uint256[32] memory scores) {
+        return (seasonLeaders[sid], seasonLeaderScores[sid]);
+    }
+
+    function achievementBitmap(uint64 sid, address player) external view returns (uint256) {
+        return seasonAchievements[sid][player];
+    }
+
+    function _joinInternal(uint256 runId, address player, uint128 paid, bool isOpener) internal {
+        PlayerRun storage pr = _playerRuns[runId][player];
+        if (pr.joinedAt != 0) {
+            if (!isOpener) revert PXG_AlreadyClaimed(runId, player);
+            return;
+        }
+        pr.joinedAt = uint64(block.timestamp);
+        pr.lastAction = pr.joinedAt;
+        creditLedger[player] += uint256(paid) / 1e6;
+    }
+
+    function _rollSeason(bool force) internal {
+        if (!force && block.timestamp < seasonOpenedAt + PXG_SEASON_LENGTH) return;
+        uint128 carry = seasonPot / 3;
+        seasonPot = seasonPot - carry;
+        seasonId += 1;
+        seasonOpenedAt = uint64(block.timestamp);
+        emit SeasonRolled(seasonId, seasonOpenedAt, carry);
+    }
+
+    function _bootstrapModes() internal {
+        modeCatalog[uint8(PXG_MODE_BLITZ)] = ModeRecipe({
+            label: keccak256("popXG.blitz"),
+            cellTarget: PXG_BLITZ_CELLS,
+            feeBiasBps: 33,
+            scoreMultiplier: 1_150,
+            durationBias: 19 minutes,
+            enabled: true
+        });
+        modeCatalog[uint8(PXG_MODE_MARATHON)] = ModeRecipe({
+            label: keccak256("popXG.marathon"),
+            cellTarget: PXG_MARATHON_CELLS,
+            feeBiasBps: 12,
+            scoreMultiplier: 2_400,
+            durationBias: 52 minutes,
+            enabled: true
+        });
+        modeCatalog[uint8(PXG_MODE_FEVER)] = ModeRecipe({
