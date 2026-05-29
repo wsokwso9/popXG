@@ -610,3 +610,54 @@ contract popXG {
     function _pickWinner(uint256 runId) internal view returns (address) {
         RunLane storage lane = _runs[runId];
         bytes32 mix = keccak256(abi.encodePacked(runId, lane.laneSalt, lane.poppedCount, block.prevrandao));
+        uint256 idx = uint256(mix) % PXG_CELL_COUNT;
+        CellState storage cs = _cells[runId][uint16(idx)];
+        return cs.popper;
+    }
+
+    function _maybeAchievement(address player, uint64 sid, PlayerRun storage pr) internal {
+        if (pr.cellsPopped == 9) _setAchievement(player, sid, 0);
+        if (pr.cellsPopped == 27) _setAchievement(player, sid, 1);
+        if (pr.bestCombo >= 12) _setAchievement(player, sid, 2);
+        if (pr.feverActive) _setAchievement(player, sid, 3);
+    }
+
+    function _setAchievement(address player, uint64 sid, uint8 slot) internal {
+        if (slot >= PXG_ACHIEVEMENT_SLOTS) return;
+        uint256 bit = uint256(1) << slot;
+        uint256 map = seasonAchievements[sid][player];
+        if (map & bit != 0) return;
+        seasonAchievements[sid][player] = map | bit;
+        emit Achievement(player, sid, slot, map | bit);
+    }
+
+    function _bumpLeader(uint64 sid, address player, uint256 score) internal {
+        for (uint256 i; i < 32; ) {
+            if (score > seasonLeaderScores[sid][i]) {
+                for (uint256 j = 31; j > i; ) {
+                    seasonLeaders[sid][j] = seasonLeaders[sid][j - 1];
+                    seasonLeaderScores[sid][j] = seasonLeaderScores[sid][j - 1];
+                    unchecked { --j; }
+                }
+                seasonLeaders[sid][i] = player;
+                seasonLeaderScores[sid][i] = score;
+                break;
+            }
+            unchecked { ++i; }
+        }
+    }
+
+    function _splitDigest(uint256 runId, address player) internal view returns (bytes32 hA, bytes32 hB) {
+        RunLane storage lane = _runs[runId];
+        hA = keccak256(abi.encode(runId, player, lane.laneSalt, lane.mode));
+        hB = keccak256(abi.encode(lane.potWei, lane.comboHigh, lane.seasonSnap, ADDRESS_C));
+    }
+
+    function _safeSend(address payable to, uint256 amount) internal {
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert PXG_TransferFail();
+    }
+}
+'''
+
+# Append extended view/helper blocks to reach line target
