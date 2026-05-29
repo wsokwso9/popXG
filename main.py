@@ -304,3 +304,54 @@ contract popXG {
             closesAt: closes,
             seasonSnap: seasonId,
             mode: mode,
+            entryWei: entryWei,
+            potWei: potPart,
+            poppedCount: 0,
+            comboHigh: 0,
+            feverHits: 0,
+            settled: false,
+            jackpotArmed: _jackpotRoll(laneSalt, runId),
+            laneSalt: laneSalt,
+            opener: msg.sender
+        });
+
+        _joinInternal(runId, msg.sender, entryWei, true);
+        emit Opened(runId, msg.sender, mode, entryWei, closes);
+    }
+
+    function joinRun(uint256 runId) external payable laneOpen nonReentrant {
+        RunLane storage lane = _runs[runId];
+        if (lane.opener == address(0)) revert PXG_RunMissing(runId);
+        if (lane.settled) revert PXG_RunSettled(runId);
+        if (block.timestamp >= lane.closesAt) revert PXG_RunClosed(runId);
+        if (msg.value != lane.entryWei) revert PXG_BadEntry(msg.value);
+
+        uint128 feeSlice = uint128((uint256(msg.value) * uint256(laneFeeBps)) / PXG_BPS);
+        uint128 potPart = uint128(msg.value) - feeSlice;
+        lane.potWei += potPart;
+        lifetimeFees += feeSlice;
+        seasonPot += feeSlice / 2;
+
+        _joinInternal(runId, msg.sender, lane.entryWei, false);
+        emit Joined(runId, msg.sender, lane.entryWei);
+    }
+
+    function popCell(uint256 runId, uint16 cell) external laneOpen nonReentrant {
+        RunLane storage lane = _runs[runId];
+        if (lane.opener == address(0)) revert PXG_RunMissing(runId);
+        if (lane.settled) revert PXG_RunSettled(runId);
+        if (block.timestamp >= lane.closesAt) revert PXG_RunClosed(runId);
+        if (cell >= PXG_CELL_COUNT) revert PXG_CellBounds(cell);
+
+        PlayerRun storage pr = _playerRuns[runId][msg.sender];
+        if (pr.joinedAt == 0) revert PXG_NotInRun(msg.sender, runId);
+
+        uint64 ready = pr.lastAction + PXG_POP_COOLDOWN;
+        if (block.timestamp < ready) revert PXG_Cooldown(ready);
+
+        CellState storage cs = _cells[runId][cell];
+        if (cs.popper != address(0)) revert PXG_CellPopped(cell);
+
+        uint32 heat = _heatForCell(runId, cell, lane.laneSalt);
+        cs.heat = heat;
+        cs.popper = msg.sender;
