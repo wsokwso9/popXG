@@ -202,3 +202,54 @@ contract popXG {
     modifier laneOpen() {
         if (gridFrozen) revert PXG_Frozen();
         _;
+    }
+
+    modifier nonReentrant() {
+        if (_laneLock == 1) revert PXG_Reentry();
+        _laneLock = 1;
+        _;
+        _laneLock = 0;
+    }
+
+    constructor() {
+        pitMaster = msg.sender;
+        oracleRelay = msg.sender;
+        ADDRESS_A = {ADDR_A};
+        ADDRESS_B = {ADDR_B};
+        ADDRESS_C = {ADDR_C};
+        if (ADDRESS_A == address(0) || ADDRESS_B == address(0) || ADDRESS_C == address(0)) {
+            revert PXG_ZeroAddr();
+        }
+        laneFeeBps = 277;
+        heatDecayBps = 1_025;
+        seasonId = 1;
+        seasonOpenedAt = uint64(block.timestamp);
+        _bootstrapModes();
+        _rollSeason(false);
+    }
+
+    receive() external payable {
+        emit Tipped(msg.sender, msg.value, keccak256("popXG.tip"));
+    }
+
+    fallback() external payable {
+        revert PXG_FallbackBlocked();
+    }
+
+    function transferPit(address next) external onlyPitMaster {
+        if (next == address(0)) revert PXG_ZeroAddr();
+        address prev = pitMaster;
+        pitMaster = next;
+        emit PitMoved(prev, next);
+    }
+
+    function setOracleRelay(address next) external onlyPitMaster {
+        if (next == address(0)) revert PXG_ZeroAddr();
+        address prev = oracleRelay;
+        oracleRelay = next;
+        emit OracleRelaySet(prev, next);
+    }
+
+    function setGridFrozen(bool on) external onlyPitMaster {
+        gridFrozen = on;
+        emit GridFreeze(on, msg.sender);
