@@ -253,3 +253,54 @@ contract popXG {
     function setGridFrozen(bool on) external onlyPitMaster {
         gridFrozen = on;
         emit GridFreeze(on, msg.sender);
+    }
+
+    function tuneFees(uint16 newLaneFeeBps, uint16 newHeatDecayBps) external onlyPitMaster {
+        if (newLaneFeeBps > PXG_FEE_CAP_BPS) revert PXG_BadFee(newLaneFeeBps, PXG_FEE_CAP_BPS);
+        if (newHeatDecayBps > 2_500) revert PXG_BadFee(newHeatDecayBps, 2_500);
+        laneFeeBps = newLaneFeeBps;
+        heatDecayBps = newHeatDecayBps;
+        emit FeeTuned(newLaneFeeBps, newHeatDecayBps, msg.sender);
+    }
+
+    function pinMode(uint32 mode, bytes32 label, uint16 cellTarget, uint16 feeBiasBps, uint32 scoreMul, uint64 durBias, bool enabled)
+        external
+        onlyPitMaster
+    {
+        modeCatalog[uint8(mode)] = ModeRecipe({
+            label: label,
+            cellTarget: cellTarget,
+            feeBiasBps: feeBiasBps,
+            scoreMultiplier: scoreMul,
+            durationBias: durBias,
+            enabled: enabled
+        });
+        emit ModePinned(mode, label, enabled);
+    }
+
+    function forceSeasonRoll() external onlyPitMaster {
+        _rollSeason(true);
+    }
+
+    function openRun(uint32 mode, uint128 entryWei, bytes32 laneSalt) external payable laneOpen nonReentrant returns (uint256 runId) {
+        ModeRecipe memory recipe = modeCatalog[uint8(mode)];
+        if (!recipe.enabled) revert PXG_ModeOff(mode);
+        if (usedRunSalts[laneSalt]) revert PXG_SaltUsed(laneSalt);
+        if (entryWei < PXG_MIN_ENTRY || entryWei > PXG_MAX_ENTRY) revert PXG_BadEntry(entryWei);
+        if (msg.value != entryWei) revert PXG_BadEntry(msg.value);
+
+        usedRunSalts[laneSalt] = true;
+        uint64 closes = uint64(block.timestamp) + _runDuration(mode);
+        runId = ++nextRunId;
+
+        uint128 feeSlice = uint128((uint256(entryWei) * uint256(laneFeeBps + recipe.feeBiasBps)) / PXG_BPS);
+        if (feeSlice > entryWei) feeSlice = entryWei / 3;
+        uint128 potPart = entryWei - feeSlice;
+        lifetimeFees += feeSlice;
+        seasonPot += feeSlice / 2;
+
+        _runs[runId] = RunLane({
+            openedAt: uint64(block.timestamp),
+            closesAt: closes,
+            seasonSnap: seasonId,
+            mode: mode,
