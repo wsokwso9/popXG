@@ -661,3 +661,54 @@ contract popXG {
 '''
 
 # Append extended view/helper blocks to reach line target
+EXTRA_VIEWS = '''
+    function heatDecayPreview(uint256 runId, uint16 cell) external view returns (uint32 decayed) {{
+        CellState storage cs = _cells[runId][cell];
+        if (cs.popper == address(0)) return 0;
+        uint32 h = cs.heat;
+        uint64 age = uint64(block.timestamp) - cs.poppedAt;
+        uint256 drop = (uint256(age) * heatDecayBps) / PXG_BPS;
+        if (drop >= h) return 0;
+        return h - uint32(drop);
+    }}
+
+    function modeLabel(uint32 mode) external view returns (bytes32) {{
+        return modeCatalog[uint8(mode)].label;
+    }}
+
+    function runCapacityLeft(uint256 runId) external view returns (uint16) {{
+        RunLane storage lane = _runs[runId];
+        ModeRecipe memory r = modeCatalog[uint8(lane.mode)];
+        if (lane.poppedCount >= r.cellTarget) return 0;
+        return r.cellTarget - uint16(lane.poppedCount);
+    }}
+
+    function estimateScore(uint32 mode, uint32 heat, uint16 combo, bool fever) external view returns (uint128) {{
+        return _scoreAdd(mode, heat, combo, fever);
+    }}
+
+    function correlates() external view returns (address a, address b, address c) {{
+        return (ADDRESS_A, ADDRESS_B, ADDRESS_C);
+    }}
+'''
+
+# Inject helper catalog functions (bulk)
+HELPER_FUNCS = []
+for i in range(48):
+    n = i + 1
+    HELPER_FUNCS.append(
+        f'''
+    function laneProbe{n}(uint256 runId, uint16 cell, address who) external view returns (uint256) {{
+        (bytes32 hA, bytes32 hB) = _splitDigest(runId, who);
+        return uint256(keccak256(abi.encodePacked(hA, hB, cell, {n}, PXG_SEASON_TAG)));
+    }}'''
+    )
+
+# Season stat snapshots
+for i in range(24):
+    sid_offset = i * 3 + 2
+    HELPER_FUNCS.append(
+        f'''
+    function seasonSnapshot{i}(uint64 sid) external view returns (uint256 pot, uint256 scoreSum, uint64 opened) {{
+        pot = seasonPot;
+        opened = seasonOpenedAt;
