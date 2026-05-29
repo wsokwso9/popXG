@@ -100,3 +100,54 @@ contract popXG {
     mapping(address => uint256) public creditLedger;
     mapping(address => uint256) public pendingWei;
     mapping(address => uint64) public lastPopAt;
+    mapping(address => uint256) public lifetimeScore;
+    mapping(uint64 => mapping(address => uint256)) public seasonScore;
+    mapping(uint64 => mapping(address => uint256)) public seasonAchievements;
+    mapping(uint64 => address[32]) public seasonLeaders;
+    mapping(uint64 => uint256[32]) public seasonLeaderScores;
+    mapping(uint8 => ModeRecipe) public modeCatalog;
+    mapping(bytes32 => bool) public usedRunSalts;
+    mapping(address => uint256) private _withdrawNonce;
+
+    struct RunLane {
+        uint64 openedAt;
+        uint64 closesAt;
+        uint64 seasonSnap;
+        uint32 mode;
+        uint128 entryWei;
+        uint128 potWei;
+        uint128 poppedCount;
+        uint16 comboHigh;
+        uint8 feverHits;
+        bool settled;
+        bool jackpotArmed;
+        bytes32 laneSalt;
+        address opener;
+    }
+
+    struct CellState {
+        uint32 heat;
+        uint32 lootTier;
+        uint64 poppedAt;
+        address popper;
+        bool isJackpotCell;
+    }
+
+    struct PlayerRun {
+        uint128 score;
+        uint16 combo;
+        uint16 bestCombo;
+        uint64 joinedAt;
+        uint64 lastAction;
+        uint128 cellsPopped;
+        bool claimed;
+        bool feverActive;
+    }
+
+    struct ModeRecipe {
+        bytes32 label;
+        uint16 cellTarget;
+        uint16 feeBiasBps;
+        uint32 scoreMultiplier;
+        uint64 durationBias;
+        bool enabled;
